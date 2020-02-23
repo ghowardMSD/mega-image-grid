@@ -1,43 +1,85 @@
-/* global fetch */
-import React, { useState, useEffect } from 'react';
-import logo from './logo.svg';
-import './App.css';
+import React, { useState, useEffect, useCallback } from "react";
+import Gallery from "react-photo-gallery";
+import Carousel, { Modal, ModalGateway } from "react-images";
+import Amplify from "@aws-amplify/core";
+import API, { graphqlOperation } from "@aws-amplify/api";
+import aws_exports from "./aws-exports";
+
+import "./App.css";
+
+Amplify.configure(aws_exports);
+
+async function SearchImages(query, from, size) {
+	const SearchQuery = `query {
+        search(text: "${query}", from: "${from}", size: "${size}") {
+        results {
+            name
+            s3Path
+            width
+            height
+        }
+        hits
+        }
+    }`;
+
+	var gql = await API.graphql(graphqlOperation(SearchQuery));
+	console.log(gql.data.search.results);
+	var result = gql.data.search.results.map(function(x) {
+		return { src: x.s3Path, width: parseInt(x.width, 10), height: parseInt(x.height, 10) };
+	});
+	console.log(result);
+	return result;
+}
+
+async function GetPhotos() {
+	var photos = await SearchImages("mega", 0, 50);
+	return photos;
+}
 
 const App = () => {
-  const [message, setMessage] = useState('...loading')
+	const [currentImage, setCurrentImage] = useState(0);
+	const [viewerIsOpen, setViewerIsOpen] = useState(false);
+	const [photos, setPhotos] = useState();
 
-  useEffect(() => {
-    async function fetchData () {
-      try {
-        let data = await (await fetch('/api')).json()
-        setMessage(data.message)
-      } catch (err) {
-        setMessage(err.message)
-      }
-    }
-    fetchData()
-  })
+	useEffect(() => {
+		async function fetchData() {
+			var photos = await GetPhotos();
+			setPhotos(photos);
+		}
+		fetchData();
+	}, []);
 
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>{message}</p>
-        <p>Change me!</p>
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
-}
+	const openLightbox = useCallback((event, { photo, index }) => {
+		setCurrentImage(index);
+		setViewerIsOpen(true);
+	}, []);
+
+	const closeLightbox = () => {
+		setCurrentImage(0);
+		setViewerIsOpen(false);
+	};
+
+	return photos ? (
+		<div>
+			<Gallery photos={photos} onClick={openLightbox} />
+			<ModalGateway>
+				{viewerIsOpen ? (
+					<Modal onClose={closeLightbox}>
+						<Carousel
+							currentIndex={currentImage}
+							views={photos.map(x => ({
+								...x,
+								srcset: x.srcSet,
+								caption: x.title,
+							}))}
+						/>
+					</Modal>
+				) : null}
+			</ModalGateway>
+		</div>
+	) : (
+		<div>Loading...</div>
+	);
+};
 
 export default App;
